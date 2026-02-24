@@ -28,7 +28,7 @@ export default function Settings() {
             </div>
             <div className="space-y-2">
               <Label>Default CC Email</Label>
-              <Input placeholder="survey-admin@abbott.com" />
+              <Input placeholder="survey-admin@company.com" />
             </div>
           </CardContent>
         </Card>
@@ -40,7 +40,7 @@ export default function Settings() {
           <CardContent className="space-y-4">
             <div className="space-y-2">
               <Label>Admin Notification Email</Label>
-              <Input placeholder="admin@abbott.com" />
+              <Input placeholder="admin@company.com" />
             </div>
           </CardContent>
         </Card>
