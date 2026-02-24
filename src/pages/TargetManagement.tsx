@@ -162,12 +162,12 @@ export default function TargetManagement() {
         <Card className="enterprise-card">
           <CardContent className="pt-6">
             <div className="flex flex-col lg:flex-row gap-4">
-              <Select value={selectedSurveyId} onValueChange={setSelectedSurveyId}>
+              <Select value={selectedSurveyId || 'all'} onValueChange={(v) => setSelectedSurveyId(v === 'all' ? '' : v)}>
                 <SelectTrigger className="lg:w-[300px]">
                   <SelectValue placeholder="Select a survey" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">All Surveys</SelectItem>
+                  <SelectItem value="all">All Surveys</SelectItem>
                   {activeSurveys.map(survey => (
                     <SelectItem key={survey.id} value={survey.id}>
                       {survey.name}
