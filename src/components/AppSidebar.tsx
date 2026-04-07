@@ -87,7 +87,7 @@ export function AppSidebar() {
     setCurrentUser({ ...currentUser, role });
   };
 
-  const renderNavItems = (items: typeof mainNavItems) =>
+  const renderNavItems = (items: NavItem[]) =>
     items
       .filter(item => {
         // Read-only can see targets (read only) and question bank (read only)
