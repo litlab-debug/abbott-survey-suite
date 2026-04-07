@@ -9,15 +9,15 @@ import {
   Language,
   QuestionCategory,
   SurveyMetrics,
+  ROLE_PERMISSIONS,
 } from '@/types/survey';
 import { generateMockData } from '@/lib/mockData';
 
 interface SurveyContextType {
-  // User
   currentUser: User;
   setCurrentUser: (user: User) => void;
+  permissions: typeof ROLE_PERMISSIONS.super_admin;
   
-  // Surveys
   surveys: Survey[];
   createSurvey: (survey: Omit<Survey, 'id' | 'createdAt' | 'updatedAt'>) => Survey;
   updateSurvey: (id: string, updates: Partial<Survey>) => void;
@@ -26,23 +26,21 @@ interface SurveyContextType {
   publishSurvey: (id: string) => void;
   closeSurvey: (id: string) => void;
   
-  // Targets
   targets: Target[];
   addTargets: (surveyId: string, newTargets: Omit<Target, 'id' | 'surveyId' | 'status'>[]) => void;
   getTargetsForSurvey: (surveyId: string) => Target[];
   updateTargetStatus: (targetId: string, status: Target['status']) => void;
   sendReminders: (surveyId: string, targetIds: string[]) => void;
   
-  // Responses
   responses: Response[];
   submitResponse: (response: Omit<Response, 'id' | 'submittedAt'>) => void;
   getResponsesForSurvey: (surveyId: string) => Response[];
   
-  // Mandatory Questions
   mandatoryQuestions: Question[];
   updateMandatoryQuestion: (questionId: string, updates: Partial<Question>) => void;
+  addQuestion: (question: Question) => void;
+  deleteQuestion: (questionId: string) => void;
   
-  // Metrics
   getMetrics: () => SurveyMetrics;
   calculateNPS: (responses: Response[]) => number;
 }
@@ -57,13 +55,14 @@ export function SurveyProvider({ children }: { children: ReactNode }) {
     role: 'super_admin',
   });
   
+  const permissions = ROLE_PERMISSIONS[currentUser.role];
+  
   const [surveys, setSurveys] = useState<Survey[]>([]);
   const [targets, setTargets] = useState<Target[]>([]);
   const [responses, setResponses] = useState<Response[]>([]);
   const [mandatoryQuestions, setMandatoryQuestions] = useState<Question[]>([]);
   const [isInitialized, setIsInitialized] = useState(false);
 
-  // Load data from localStorage or generate mock data
   useEffect(() => {
     const stored = localStorage.getItem('abbott-survey-data');
     if (stored) {
@@ -90,14 +89,10 @@ export function SurveyProvider({ children }: { children: ReactNode }) {
     setIsInitialized(true);
   }, []);
 
-  // Save to localStorage when data changes
   useEffect(() => {
     if (isInitialized) {
       localStorage.setItem('abbott-survey-data', JSON.stringify({
-        surveys,
-        targets,
-        responses,
-        mandatoryQuestions,
+        surveys, targets, responses, mandatoryQuestions,
       }));
     }
   }, [surveys, targets, responses, mandatoryQuestions, isInitialized]);
@@ -131,7 +126,6 @@ export function SurveyProvider({ children }: { children: ReactNode }) {
     const survey = getSurvey(id);
     if (survey && survey.status === 'draft') {
       updateSurvey(id, { status: 'active' });
-      // Simulate sending invitations
       const surveyTargets = getTargetsForSurvey(id);
       surveyTargets.forEach(target => {
         updateTargetStatus(target.id, 'invited');
@@ -151,8 +145,6 @@ export function SurveyProvider({ children }: { children: ReactNode }) {
       status: 'pending' as const,
     }));
     setTargets(prev => [...prev, ...targetsToAdd]);
-    
-    // Update survey target count
     updateSurvey(surveyId, { 
       targetCount: (getSurvey(surveyId)?.targetCount || 0) + targetsToAdd.length 
     });
@@ -186,8 +178,6 @@ export function SurveyProvider({ children }: { children: ReactNode }) {
     };
     setResponses(prev => [...prev, newResponse]);
     updateTargetStatus(responseData.targetId, 'completed');
-    
-    // Update survey response count
     const survey = getSurvey(responseData.surveyId);
     if (survey) {
       updateSurvey(responseData.surveyId, { 
@@ -205,16 +195,21 @@ export function SurveyProvider({ children }: { children: ReactNode }) {
     ));
   };
 
+  const addQuestion = (question: Question) => {
+    setMandatoryQuestions(prev => [...prev, question]);
+  };
+
+  const deleteQuestion = (questionId: string) => {
+    setMandatoryQuestions(prev => prev.filter(q => q.id !== questionId));
+  };
+
   const calculateNPS = (surveyResponses: Response[]): number => {
     const npsScores = surveyResponses
       .map(r => r.npsScore)
       .filter((score): score is number => score !== undefined);
-    
     if (npsScores.length === 0) return 0;
-    
     const promoters = npsScores.filter(s => s >= 9).length;
     const detractors = npsScores.filter(s => s <= 6).length;
-    
     return Math.round(((promoters - detractors) / npsScores.length) * 100);
   };
 
@@ -223,49 +218,22 @@ export function SurveyProvider({ children }: { children: ReactNode }) {
     const activeSurveys = surveys.filter(s => s.status === 'active').length;
     const totalResponses = responses.length;
     const averageNPS = calculateNPS(responses);
-    
     const totalTargets = targets.length;
-    const responseRate = totalTargets > 0 
-      ? Math.round((totalResponses / totalTargets) * 100) 
-      : 0;
-    
+    const responseRate = totalTargets > 0 ? Math.round((totalResponses / totalTargets) * 100) : 0;
     const avgTime = responses.length > 0
       ? Math.round(responses.reduce((sum, r) => sum + r.completionTime, 0) / responses.length)
       : 0;
-    
-    return {
-      totalSurveys,
-      activeSurveys,
-      totalResponses,
-      averageNPS,
-      responseRate,
-      averageCompletionTime: avgTime,
-    };
+    return { totalSurveys, activeSurveys, totalResponses, averageNPS, responseRate, averageCompletionTime: avgTime };
   };
 
   return (
     <SurveyContext.Provider value={{
-      currentUser,
-      setCurrentUser,
-      surveys,
-      createSurvey,
-      updateSurvey,
-      deleteSurvey,
-      getSurvey,
-      publishSurvey,
-      closeSurvey,
-      targets,
-      addTargets,
-      getTargetsForSurvey,
-      updateTargetStatus,
-      sendReminders,
-      responses,
-      submitResponse,
-      getResponsesForSurvey,
-      mandatoryQuestions,
-      updateMandatoryQuestion,
-      getMetrics,
-      calculateNPS,
+      currentUser, setCurrentUser, permissions,
+      surveys, createSurvey, updateSurvey, deleteSurvey, getSurvey, publishSurvey, closeSurvey,
+      targets, addTargets, getTargetsForSurvey, updateTargetStatus, sendReminders,
+      responses, submitResponse, getResponsesForSurvey,
+      mandatoryQuestions, updateMandatoryQuestion, addQuestion, deleteQuestion,
+      getMetrics, calculateNPS,
     }}>
       {children}
     </SurveyContext.Provider>
@@ -282,21 +250,17 @@ export function useSurvey() {
 
 function generateDefaultMandatoryQuestions(): Question[] {
   const categories: QuestionCategory[] = [
-    'overall_satisfaction',
-    'product_quality',
-    'customer_service',
-    'delivery_experience',
-    'value_for_money',
-    'communication',
-    'technical_support',
-    'ease_of_use',
-    'recommendation',
+    'overall_satisfaction', 'product_quality', 'customer_service',
+    'delivery_experience', 'value_for_money', 'communication',
+    'technical_support', 'ease_of_use', 'recommendation',
   ];
 
   return categories.map((category, index) => ({
     id: `mandatory-${category}`,
+    code: `GQ-${String(index + 1).padStart(2, '0')}`,
     category,
-    type: category === 'recommendation' ? 'nps' : 'rating',
+    type: category === 'recommendation' ? 'nps' as const : 'rating' as const,
+    scope: 'global' as const,
     text: {
       en: getDefaultQuestionText(category),
       es: getDefaultQuestionText(category),
@@ -306,6 +270,7 @@ function generateDefaultMandatoryQuestions(): Question[] {
       pt: getDefaultQuestionText(category),
       zh: getDefaultQuestionText(category),
       ja: getDefaultQuestionText(category),
+      tr: getDefaultQuestionText(category),
     },
     required: true,
     isMandatory: true,

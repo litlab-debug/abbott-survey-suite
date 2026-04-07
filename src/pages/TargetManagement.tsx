@@ -40,15 +40,16 @@ import {
   Clock,
   AlertCircle,
   Mail,
+  FileDown,
 } from 'lucide-react';
-import { Target, LANGUAGE_NAMES, CHANNEL_NAMES, COUNTRIES, Language, Channel } from '@/types/survey';
+import { Target, LANGUAGE_NAMES, CHANNEL_NAMES, TARGET_CSV_COLUMNS } from '@/types/survey';
 import { useToast } from '@/hooks/use-toast';
 
 export default function TargetManagement() {
   const [searchParams] = useSearchParams();
   const preSelectedSurveyId = searchParams.get('surveyId');
   
-  const { surveys, targets, addTargets, sendReminders, getTargetsForSurvey } = useSurvey();
+  const { surveys, targets, addTargets, sendReminders, getTargetsForSurvey, permissions } = useSurvey();
   const { toast } = useToast();
   
   const [selectedSurveyId, setSelectedSurveyId] = useState(preSelectedSurveyId || '');
@@ -64,7 +65,8 @@ export default function TargetManagement() {
   const filteredTargets = surveyTargets.filter(target => {
     const matchesSearch = target.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
       target.email.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      target.company?.toLowerCase().includes(searchQuery.toLowerCase());
+      target.customerId.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      target.customerName.toLowerCase().includes(searchQuery.toLowerCase());
     const matchesStatus = statusFilter === 'all' || target.status === statusFilter;
     return matchesSearch && matchesStatus;
   });
@@ -112,13 +114,13 @@ export default function TargetManagement() {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    // Simulate CSV parsing
+    // Simulate CSV parsing with new schema
     const mockData: Omit<Target, 'id' | 'surveyId' | 'status'>[] = [
-      { email: 'john.doe@hospital.com', name: 'John Doe', company: 'City Hospital', country: 'United States', language: 'en', channel: 'email', segment: 'Enterprise' },
-      { email: 'jane.smith@clinic.com', name: 'Jane Smith', company: 'Valley Clinic', country: 'United States', language: 'en', channel: 'email', segment: 'Mid-Market' },
-      { email: 'hans.mueller@klinik.de', name: 'Hans Mueller', company: 'Berlin Klinik', country: 'Germany', language: 'de', channel: 'email', segment: 'Enterprise' },
-      { email: 'marie.dupont@hopital.fr', name: 'Marie Dupont', company: 'Paris Hospital', country: 'France', language: 'fr', channel: 'email', segment: 'SMB' },
-      { email: 'carlos.garcia@clinica.es', name: 'Carlos Garcia', company: 'Madrid Clinica', country: 'Spain', language: 'es', channel: 'email', segment: 'Mid-Market' },
+      { customerId: 'CUST-00101', customerName: 'City Hospital', email: 'john.doe@hospital.com', name: 'John Doe', company: 'City Hospital', country: 'United States', language: 'en', preferredLanguage: 'en', channel: 'email', segment: 'Enterprise' },
+      { customerId: 'CUST-00102', customerName: 'Valley Clinic', email: 'jane.smith@clinic.com', name: 'Jane Smith', company: 'Valley Clinic', country: 'United States', language: 'en', preferredLanguage: 'en', channel: 'email', segment: 'Mid-Market' },
+      { customerId: 'CUST-00103', customerName: 'Berlin Klinik', email: 'hans.mueller@klinik.de', name: 'Hans Mueller', company: 'Berlin Klinik', country: 'Germany', language: 'de', preferredLanguage: 'de', channel: 'email', segment: 'Enterprise' },
+      { customerId: 'CUST-00104', customerName: 'Paris Hospital', email: 'marie.dupont@hopital.fr', name: 'Marie Dupont', company: 'Paris Hospital', country: 'France', language: 'fr', preferredLanguage: 'fr', channel: 'email', segment: 'SMB' },
+      { customerId: 'CUST-00105', customerName: 'Madrid Clinica', email: 'carlos.garcia@clinica.es', name: 'Carlos Garcia', company: 'Madrid Clinica', country: 'Spain', language: 'es', preferredLanguage: 'es', channel: 'email', segment: 'Mid-Market' },
     ];
     setCsvPreview(mockData);
     setUploadDialogOpen(true);
@@ -132,17 +134,30 @@ export default function TargetManagement() {
     setCsvPreview([]);
   };
 
-  const exportTargets = () => {
+  const downloadTemplate = () => {
+    const headers = TARGET_CSV_COLUMNS.map(c => c.key).join(',');
+    const example = 'CUST-001,City Hospital,john@hospital.com,United States,EN,Diagnostics,email,EXT-001';
+    const csv = headers + '\n' + example;
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'target-list-template.csv';
+    a.click();
+  };
+
+  const exportTargets = (onlyNonResponded = false) => {
+    const data = onlyNonResponded ? filteredTargets.filter(t => t.status !== 'completed') : filteredTargets;
     const csv = [
-      ['Email', 'Name', 'Company', 'Country', 'Language', 'Channel', 'Status'].join(','),
-      ...filteredTargets.map(t => [t.email, t.name, t.company || '', t.country, t.language, t.channel, t.status].join(',')),
+      ['CustomerId', 'CustomerName', 'Email', 'Name', 'Country', 'Language', 'Channel', 'Status'].join(','),
+      ...data.map(t => [t.customerId, t.customerName, t.email, t.name, t.country, t.language, t.channel, t.status].join(',')),
     ].join('\n');
     
     const blob = new Blob([csv], { type: 'text/csv' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = 'targets.csv';
+    a.download = onlyNonResponded ? 'non-respondents.csv' : 'targets.csv';
     a.click();
   };
 
@@ -156,7 +171,7 @@ export default function TargetManagement() {
   };
 
   return (
-    <AppLayout title="Target Management" description="Manage survey recipients and invitations">
+    <AppLayout title="Target Management" description="Manage survey recipients and invitations (TargetList)">
       <div className="space-y-6 animate-fade-in">
         {/* Filters */}
         <Card className="enterprise-card">
@@ -169,9 +184,7 @@ export default function TargetManagement() {
                 <SelectContent>
                   <SelectItem value="all">All Surveys</SelectItem>
                   {activeSurveys.map(survey => (
-                    <SelectItem key={survey.id} value={survey.id}>
-                      {survey.name}
-                    </SelectItem>
+                    <SelectItem key={survey.id} value={survey.id}>{survey.name}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
@@ -179,7 +192,7 @@ export default function TargetManagement() {
               <div className="relative flex-1">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                 <Input
-                  placeholder="Search by name, email, or company..."
+                  placeholder="Search by name, email, CustomerId..."
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                   className="pl-10"
@@ -206,8 +219,12 @@ export default function TargetManagement() {
         {/* Actions */}
         <div className="flex flex-wrap gap-3 justify-between">
           <div className="flex gap-3">
-            {selectedSurveyId && (
+            {selectedSurveyId && permissions.canManageTargets && (
               <>
+                <Button variant="outline" onClick={downloadTemplate}>
+                  <FileDown className="h-4 w-4 mr-2" />
+                  Download Template
+                </Button>
                 <Button variant="outline" asChild>
                   <label>
                     <Upload className="h-4 w-4 mr-2" />
@@ -215,21 +232,29 @@ export default function TargetManagement() {
                     <input type="file" accept=".csv" className="hidden" onChange={handleFileUpload} />
                   </label>
                 </Button>
-                <Button
-                  variant="outline"
-                  onClick={handleSendReminders}
-                  disabled={selectedTargets.length === 0}
-                >
-                  <Send className="h-4 w-4 mr-2" />
-                  Send Reminders ({selectedTargets.length})
-                </Button>
+                {permissions.canSendReminders && (
+                  <Button
+                    variant="outline"
+                    onClick={handleSendReminders}
+                    disabled={selectedTargets.length === 0}
+                  >
+                    <Send className="h-4 w-4 mr-2" />
+                    Send Reminders ({selectedTargets.length})
+                  </Button>
+                )}
               </>
             )}
           </div>
-          <Button variant="outline" onClick={exportTargets}>
-            <Download className="h-4 w-4 mr-2" />
-            Export CSV
-          </Button>
+          <div className="flex gap-3">
+            <Button variant="outline" onClick={() => exportTargets(true)}>
+              <Download className="h-4 w-4 mr-2" />
+              Export Non-Respondents
+            </Button>
+            <Button variant="outline" onClick={() => exportTargets(false)}>
+              <Download className="h-4 w-4 mr-2" />
+              Export All
+            </Button>
+          </div>
         </div>
 
         {/* Stats Cards */}
@@ -303,10 +328,11 @@ export default function TargetManagement() {
                       onCheckedChange={toggleSelectAll}
                     />
                   </TableHead>
+                  <TableHead>CustomerId</TableHead>
                   <TableHead>Contact</TableHead>
-                  <TableHead>Company</TableHead>
+                  <TableHead>Customer</TableHead>
                   <TableHead>Country</TableHead>
-                  <TableHead>Channel</TableHead>
+                  <TableHead>Language</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead>Last Activity</TableHead>
                 </TableRow>
@@ -314,7 +340,7 @@ export default function TargetManagement() {
               <TableBody>
                 {filteredTargets.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
+                    <TableCell colSpan={8} className="text-center py-8 text-muted-foreground">
                       No targets found
                     </TableCell>
                   </TableRow>
@@ -328,21 +354,20 @@ export default function TargetManagement() {
                         />
                       </TableCell>
                       <TableCell>
+                        <span className="font-mono text-xs">{target.customerId}</span>
+                      </TableCell>
+                      <TableCell>
                         <div>
                           <p className="font-medium">{target.name}</p>
                           <p className="text-sm text-muted-foreground">{target.email}</p>
                         </div>
                       </TableCell>
-                      <TableCell>{target.company || '-'}</TableCell>
+                      <TableCell>{target.customerName}</TableCell>
                       <TableCell>
-                        <Badge variant="outline" className="text-xs">
-                          {target.country}
-                        </Badge>
+                        <Badge variant="outline" className="text-xs">{target.country}</Badge>
                       </TableCell>
                       <TableCell>
-                        <Badge variant="outline" className="text-xs">
-                          {CHANNEL_NAMES[target.channel]}
-                        </Badge>
+                        <Badge variant="outline" className="text-xs">{LANGUAGE_NAMES[target.preferredLanguage]}</Badge>
                       </TableCell>
                       <TableCell>{getStatusBadge(target.status)}</TableCell>
                       <TableCell className="text-sm text-muted-foreground">
@@ -369,42 +394,40 @@ export default function TargetManagement() {
 
         {/* Upload Dialog */}
         <Dialog open={uploadDialogOpen} onOpenChange={setUploadDialogOpen}>
-          <DialogContent className="max-w-2xl">
+          <DialogContent className="max-w-3xl">
             <DialogHeader>
               <DialogTitle>Upload Targets</DialogTitle>
               <DialogDescription>
-                Preview the targets to be imported. Click confirm to add them to the survey.
+                Preview the targets to be imported. Deduplication: SurveyId + Email. Duplicates will be replaced.
               </DialogDescription>
             </DialogHeader>
             <div className="max-h-[300px] overflow-auto">
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Name</TableHead>
+                    <TableHead>CustomerId</TableHead>
+                    <TableHead>CustomerName</TableHead>
                     <TableHead>Email</TableHead>
-                    <TableHead>Company</TableHead>
                     <TableHead>Country</TableHead>
+                    <TableHead>Language</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {csvPreview.map((row, idx) => (
                     <TableRow key={idx}>
-                      <TableCell>{row.name}</TableCell>
+                      <TableCell className="font-mono text-xs">{row.customerId}</TableCell>
+                      <TableCell>{row.customerName}</TableCell>
                       <TableCell>{row.email}</TableCell>
-                      <TableCell>{row.company}</TableCell>
                       <TableCell>{row.country}</TableCell>
+                      <TableCell>{LANGUAGE_NAMES[row.preferredLanguage]}</TableCell>
                     </TableRow>
                   ))}
                 </TableBody>
               </Table>
             </div>
             <DialogFooter>
-              <Button variant="outline" onClick={() => setUploadDialogOpen(false)}>
-                Cancel
-              </Button>
-              <Button onClick={confirmUpload}>
-                Import {csvPreview.length} Targets
-              </Button>
+              <Button variant="outline" onClick={() => setUploadDialogOpen(false)}>Cancel</Button>
+              <Button onClick={confirmUpload}>Import {csvPreview.length} Targets</Button>
             </DialogFooter>
           </DialogContent>
         </Dialog>
