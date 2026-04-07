@@ -4,7 +4,6 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
-import { Checkbox } from '@/components/ui/checkbox';
 import { Badge } from '@/components/ui/badge';
 import {
   Select,
@@ -14,6 +13,14 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 import { useSurvey } from '@/context/SurveyContext';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useState, useEffect } from 'react';
@@ -24,6 +31,8 @@ import {
   LANGUAGE_NAMES,
   COUNTRIES,
   CHANNEL_NAMES,
+  CATEGORY_LABELS,
+  SCOPE_LABELS,
   Question,
 } from '@/types/survey';
 import {
@@ -31,18 +40,27 @@ import {
   ArrowRight,
   Save,
   Send,
-  Plus,
   Trash2,
   GripVertical,
   Calendar,
   Globe,
   Mail,
   MessageSquare,
+  CheckCircle2,
+  AlertCircle,
+  Shield,
 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 
-const languages: Language[] = ['en', 'es', 'fr', 'de', 'it', 'pt', 'zh', 'ja'];
+const languages: Language[] = ['en', 'es', 'fr', 'de', 'it', 'pt', 'zh', 'ja', 'tr'];
 const channels: Channel[] = ['email', 'sms', 'web', 'phone'];
+
+const emptyMsg = { subject: '', body: '' };
+const defaultMessages = () => ({
+  invite: { en: { subject: 'We value your feedback', body: 'Dear {CustomerName}, we would appreciate your feedback.' }, es: emptyMsg, fr: emptyMsg, de: emptyMsg, it: emptyMsg, pt: emptyMsg, zh: emptyMsg, ja: emptyMsg, tr: emptyMsg },
+  reminder: { en: { subject: 'Reminder: We value your feedback', body: 'This is a friendly reminder to complete our survey.' }, es: emptyMsg, fr: emptyMsg, de: emptyMsg, it: emptyMsg, pt: emptyMsg, zh: emptyMsg, ja: emptyMsg, tr: emptyMsg },
+  closing: { en: { subject: 'Thank you for your feedback', body: 'Thank you for completing our survey.' }, es: emptyMsg, fr: emptyMsg, de: emptyMsg, it: emptyMsg, pt: emptyMsg, zh: emptyMsg, ja: emptyMsg, tr: emptyMsg },
+});
 
 const defaultSurvey: Partial<Survey> = {
   name: '',
@@ -55,48 +73,30 @@ const defaultSurvey: Partial<Survey> = {
   startDate: new Date().toISOString().split('T')[0],
   endDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
   questions: [],
-  messages: {
-    invite: {
-      en: { subject: 'We value your feedback', body: 'Dear Customer, we would appreciate your feedback.' },
-      es: { subject: '', body: '' }, fr: { subject: '', body: '' }, de: { subject: '', body: '' },
-      it: { subject: '', body: '' }, pt: { subject: '', body: '' }, zh: { subject: '', body: '' }, ja: { subject: '', body: '' },
-    },
-    reminder: {
-      en: { subject: 'Reminder: We value your feedback', body: 'This is a friendly reminder to complete our survey.' },
-      es: { subject: '', body: '' }, fr: { subject: '', body: '' }, de: { subject: '', body: '' },
-      it: { subject: '', body: '' }, pt: { subject: '', body: '' }, zh: { subject: '', body: '' }, ja: { subject: '', body: '' },
-    },
-    closing: {
-      en: { subject: 'Thank you for your feedback', body: 'Thank you for completing our survey.' },
-      es: { subject: '', body: '' }, fr: { subject: '', body: '' }, de: { subject: '', body: '' },
-      it: { subject: '', body: '' }, pt: { subject: '', body: '' }, zh: { subject: '', body: '' }, ja: { subject: '', body: '' },
-    },
-  },
+  messages: defaultMessages(),
   ccEmails: [],
   targetCount: 0,
   responseCount: 0,
-  reminderSchedule: { firstReminder: 7, secondReminder: 3 },
+  reminderSchedule: { firstReminder: 3, secondReminder: 1 },
 };
 
 export default function SurveyBuilder() {
   const { id } = useParams();
   const navigate = useNavigate();
   const { toast } = useToast();
-  const { getSurvey, createSurvey, updateSurvey, mandatoryQuestions, publishSurvey } = useSurvey();
+  const { getSurvey, createSurvey, updateSurvey, mandatoryQuestions, publishSurvey, permissions } = useSurvey();
   
   const [activeTab, setActiveTab] = useState('basic');
   const [formData, setFormData] = useState<Partial<Survey>>(defaultSurvey);
   const [selectedMessageLang, setSelectedMessageLang] = useState<Language>('en');
+  const [publishDialogOpen, setPublishDialogOpen] = useState(false);
   const isEditing = !!id;
 
   useEffect(() => {
     if (id) {
       const survey = getSurvey(id);
-      if (survey) {
-        setFormData(survey);
-      }
+      if (survey) setFormData(survey);
     } else {
-      // Add mandatory questions to new survey
       setFormData(prev => ({
         ...prev,
         questions: mandatoryQuestions.filter(q => q.isActive),
@@ -163,7 +163,6 @@ export default function SurveyBuilder() {
       toast({ title: 'Error', description: 'Survey name is required', variant: 'destructive' });
       return;
     }
-
     if (isEditing && id) {
       updateSurvey(id, formData as Partial<Survey>);
       toast({ title: 'Success', description: 'Survey updated successfully' });
@@ -177,18 +176,30 @@ export default function SurveyBuilder() {
     }
   };
 
+  // Publication checklist
+  const publishChecks = [
+    { label: 'Survey name defined', ok: !!formData.name },
+    { label: 'At least one country selected', ok: (formData.countries?.length || 0) > 0 },
+    { label: 'At least one language selected', ok: (formData.languages?.length || 0) > 0 },
+    { label: 'Questions configured', ok: (formData.questions?.length || 0) > 0 },
+    { label: 'Start/End dates defined', ok: !!formData.startDate && !!formData.endDate },
+    { label: 'End date > Start date', ok: !!(formData.startDate && formData.endDate && formData.endDate > formData.startDate) },
+    { label: 'Invitation message configured', ok: !!formData.messages?.invite?.en?.subject },
+  ];
+  const allChecksPass = publishChecks.every(c => c.ok);
+
   const handlePublish = () => {
-    if (!formData.name || !formData.countries?.length) {
-      toast({ title: 'Error', description: 'Please complete all required fields', variant: 'destructive' });
+    if (!allChecksPass) {
+      toast({ title: 'Error', description: 'Please complete all required fields before publishing', variant: 'destructive' });
       return;
     }
-
     if (isEditing && id) {
       handleSave();
       publishSurvey(id);
-      toast({ title: 'Success', description: 'Survey published successfully' });
+      toast({ title: 'Success', description: 'Survey published successfully. Invitations will be sent on StartDate.' });
       navigate(`/surveys/${id}`);
     }
+    setPublishDialogOpen(false);
   };
 
   const tabs = [
@@ -211,12 +222,12 @@ export default function SurveyBuilder() {
             Back to Surveys
           </Button>
           <div className="flex gap-3">
-            <Button variant="outline" onClick={handleSave}>
+            <Button variant="outline" onClick={handleSave} disabled={!permissions.canEditSurvey}>
               <Save className="h-4 w-4 mr-2" />
               Save Draft
             </Button>
-            {formData.status === 'draft' && (
-              <Button onClick={handlePublish}>
+            {formData.status === 'draft' && permissions.canPublishSurvey && (
+              <Button onClick={() => setPublishDialogOpen(true)}>
                 <Send className="h-4 w-4 mr-2" />
                 Publish Survey
               </Button>
@@ -265,45 +276,21 @@ export default function SurveyBuilder() {
                   <div className="grid gap-4 sm:grid-cols-2">
                     <div className="space-y-2">
                       <Label htmlFor="startDate">Start Date *</Label>
-                      <Input
-                        id="startDate"
-                        type="date"
-                        value={formData.startDate || ''}
-                        onChange={(e) => updateFormData('startDate', e.target.value)}
-                      />
+                      <Input id="startDate" type="date" value={formData.startDate || ''} onChange={(e) => updateFormData('startDate', e.target.value)} />
                     </div>
                     <div className="space-y-2">
                       <Label htmlFor="endDate">End Date *</Label>
-                      <Input
-                        id="endDate"
-                        type="date"
-                        value={formData.endDate || ''}
-                        onChange={(e) => updateFormData('endDate', e.target.value)}
-                      />
+                      <Input id="endDate" type="date" value={formData.endDate || ''} onChange={(e) => updateFormData('endDate', e.target.value)} />
                     </div>
                   </div>
                   <div className="grid gap-4 sm:grid-cols-2">
                     <div className="space-y-2">
-                      <Label>First Reminder (days before end)</Label>
-                      <Input
-                        type="number"
-                        value={formData.reminderSchedule?.firstReminder || 7}
-                        onChange={(e) => updateFormData('reminderSchedule', {
-                          ...formData.reminderSchedule!,
-                          firstReminder: parseInt(e.target.value),
-                        })}
-                      />
+                      <Label>1st Reminder (days before EndDate) — T-</Label>
+                      <Input type="number" value={formData.reminderSchedule?.firstReminder || 3} onChange={(e) => updateFormData('reminderSchedule', { ...formData.reminderSchedule!, firstReminder: parseInt(e.target.value) })} />
                     </div>
                     <div className="space-y-2">
-                      <Label>Second Reminder (days before end)</Label>
-                      <Input
-                        type="number"
-                        value={formData.reminderSchedule?.secondReminder || 3}
-                        onChange={(e) => updateFormData('reminderSchedule', {
-                          ...formData.reminderSchedule!,
-                          secondReminder: parseInt(e.target.value),
-                        })}
-                      />
+                      <Label>2nd Reminder (days before EndDate) — T-</Label>
+                      <Input type="number" value={formData.reminderSchedule?.secondReminder || 1} onChange={(e) => updateFormData('reminderSchedule', { ...formData.reminderSchedule!, secondReminder: parseInt(e.target.value) })} />
                     </div>
                   </div>
                 </div>
@@ -315,38 +302,25 @@ export default function SurveyBuilder() {
           <TabsContent value="scope">
             <div className="grid gap-6 lg:grid-cols-2">
               <Card className="enterprise-card">
-                <CardHeader>
-                  <CardTitle>Languages</CardTitle>
-                </CardHeader>
+                <CardHeader><CardTitle>Languages</CardTitle></CardHeader>
                 <CardContent className="space-y-4">
                   <div className="space-y-2">
-                    <Label>Primary Language</Label>
-                    <Select
-                      value={formData.primaryLanguage}
-                      onValueChange={(v) => updateFormData('primaryLanguage', v as Language)}
-                    >
-                      <SelectTrigger>
-                        <SelectValue />
-                      </SelectTrigger>
+                    <Label>Default Language</Label>
+                    <Select value={formData.primaryLanguage} onValueChange={(v) => updateFormData('primaryLanguage', v as Language)}>
+                      <SelectTrigger><SelectValue /></SelectTrigger>
                       <SelectContent>
                         {formData.languages?.map(lang => (
-                          <SelectItem key={lang} value={lang}>
-                            {LANGUAGE_NAMES[lang]}
-                          </SelectItem>
+                          <SelectItem key={lang} value={lang}>{LANGUAGE_NAMES[lang]}</SelectItem>
                         ))}
                       </SelectContent>
                     </Select>
                   </div>
                   <div className="space-y-2">
                     <Label>Available Languages</Label>
+                    <p className="text-xs text-muted-foreground">1 Microsoft Forms will be created per active language</p>
                     <div className="flex flex-wrap gap-2">
                       {languages.map(lang => (
-                        <Badge
-                          key={lang}
-                          variant={formData.languages?.includes(lang) ? 'default' : 'outline'}
-                          className="cursor-pointer"
-                          onClick={() => toggleLanguage(lang)}
-                        >
+                        <Badge key={lang} variant={formData.languages?.includes(lang) ? 'default' : 'outline'} className="cursor-pointer" onClick={() => toggleLanguage(lang)}>
                           {LANGUAGE_NAMES[lang]}
                         </Badge>
                       ))}
@@ -356,18 +330,11 @@ export default function SurveyBuilder() {
               </Card>
 
               <Card className="enterprise-card">
-                <CardHeader>
-                  <CardTitle>Channels</CardTitle>
-                </CardHeader>
+                <CardHeader><CardTitle>Channels</CardTitle></CardHeader>
                 <CardContent>
                   <div className="flex flex-wrap gap-2">
                     {channels.map(channel => (
-                      <Badge
-                        key={channel}
-                        variant={formData.channels?.includes(channel) ? 'default' : 'outline'}
-                        className="cursor-pointer"
-                        onClick={() => toggleChannel(channel)}
-                      >
+                      <Badge key={channel} variant={formData.channels?.includes(channel) ? 'default' : 'outline'} className="cursor-pointer" onClick={() => toggleChannel(channel)}>
                         {CHANNEL_NAMES[channel]}
                       </Badge>
                     ))}
@@ -376,26 +343,17 @@ export default function SurveyBuilder() {
               </Card>
 
               <Card className="enterprise-card lg:col-span-2">
-                <CardHeader>
-                  <CardTitle>Countries</CardTitle>
-                </CardHeader>
+                <CardHeader><CardTitle>Countries</CardTitle></CardHeader>
                 <CardContent>
                   <div className="flex flex-wrap gap-2">
                     {COUNTRIES.map(country => (
-                      <Badge
-                        key={country}
-                        variant={formData.countries?.includes(country) ? 'default' : 'outline'}
-                        className="cursor-pointer"
-                        onClick={() => toggleCountry(country)}
-                      >
+                      <Badge key={country} variant={formData.countries?.includes(country) ? 'default' : 'outline'} className="cursor-pointer" onClick={() => toggleCountry(country)}>
                         {country}
                       </Badge>
                     ))}
                   </div>
                   {formData.countries?.length === 0 && (
-                    <p className="text-sm text-muted-foreground mt-2">
-                      Select at least one country
-                    </p>
+                    <p className="text-sm text-destructive mt-2">Select at least one country</p>
                   )}
                 </CardContent>
               </Card>
@@ -409,32 +367,30 @@ export default function SurveyBuilder() {
                 <div>
                   <CardTitle>Survey Questions</CardTitle>
                   <p className="text-sm text-muted-foreground mt-1">
-                    Mandatory questions are automatically included and cannot be removed
+                    9 mandatory global categories are always included. Local questions can be added per category.
                   </p>
                 </div>
               </CardHeader>
               <CardContent>
                 <div className="space-y-4">
                   {formData.questions?.map((question, index) => (
-                    <div
-                      key={question.id}
-                      className="flex items-start gap-3 p-4 border border-border rounded-lg"
-                    >
+                    <div key={question.id} className="flex items-start gap-3 p-4 border border-border rounded-lg">
                       <GripVertical className="h-5 w-5 text-muted-foreground mt-0.5 cursor-grab" />
                       <div className="flex-1">
                         <div className="flex items-center gap-2 mb-2">
                           <span className="text-sm font-medium">Q{index + 1}</span>
-                          <Badge variant="outline" className="text-xs">
-                            {question.type.replace('_', ' ')}
-                          </Badge>
+                          <Badge variant="outline" className="text-xs">{question.type.replace('_', ' ')}</Badge>
+                          <Badge variant="outline" className="text-xs">{SCOPE_LABELS[question.scope]}</Badge>
                           {question.isMandatory && (
-                            <Badge className="bg-primary/10 text-primary text-xs">Mandatory</Badge>
+                            <Badge className="bg-primary/10 text-primary text-xs">
+                              <Shield className="h-3 w-3 mr-1" />
+                              Mandatory
+                            </Badge>
                           )}
-                          {question.required && (
-                            <Badge variant="secondary" className="text-xs">Required</Badge>
-                          )}
+                          <Badge variant="secondary" className="text-xs">{CATEGORY_LABELS[question.category]}</Badge>
                         </div>
                         <p className="text-sm">{question.text.en}</p>
+                        <p className="text-xs text-muted-foreground mt-1">Code: {question.code}</p>
                       </div>
                       {!question.isMandatory && (
                         <Button variant="ghost" size="icon" className="text-destructive">
@@ -453,90 +409,45 @@ export default function SurveyBuilder() {
             <Card className="enterprise-card">
               <CardHeader>
                 <div className="flex items-center justify-between">
-                  <CardTitle>Email Templates</CardTitle>
-                  <Select
-                    value={selectedMessageLang}
-                    onValueChange={(v) => setSelectedMessageLang(v as Language)}
-                  >
-                    <SelectTrigger className="w-[150px]">
-                      <SelectValue />
-                    </SelectTrigger>
+                  <div>
+                    <CardTitle>Email Templates</CardTitle>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Variables: {'{SurveyName}'}, {'{EndDate}'}, {'{LinkForms}'}, {'{SupportEmail}'}, {'{Country}'}, {'{CustomerName}'}
+                    </p>
+                  </div>
+                  <Select value={selectedMessageLang} onValueChange={(v) => setSelectedMessageLang(v as Language)}>
+                    <SelectTrigger className="w-[150px]"><SelectValue /></SelectTrigger>
                     <SelectContent>
                       {formData.languages?.map(lang => (
-                        <SelectItem key={lang} value={lang}>
-                          {LANGUAGE_NAMES[lang]}
-                        </SelectItem>
+                        <SelectItem key={lang} value={lang}>{LANGUAGE_NAMES[lang]}</SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
                 </div>
               </CardHeader>
               <CardContent className="space-y-8">
-                {/* Invitation */}
-                <div className="space-y-4">
-                  <h4 className="font-medium">Invitation Email</h4>
-                  <div className="space-y-2">
-                    <Label>Subject</Label>
-                    <Input
-                      value={formData.messages?.invite[selectedMessageLang]?.subject || ''}
-                      onChange={(e) => updateMessage('invite', 'subject', e.target.value)}
-                      placeholder="Email subject line..."
-                    />
+                {(['invite', 'reminder', 'closing'] as const).map(type => (
+                  <div key={type} className="space-y-4">
+                    <h4 className="font-medium capitalize">{type === 'invite' ? 'Invitation' : type === 'reminder' ? 'Reminder' : 'Thank You'} Email</h4>
+                    <div className="space-y-2">
+                      <Label>Subject</Label>
+                      <Input
+                        value={formData.messages?.[type]?.[selectedMessageLang]?.subject || ''}
+                        onChange={(e) => updateMessage(type, 'subject', e.target.value)}
+                        placeholder="Email subject line..."
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Body</Label>
+                      <Textarea
+                        value={formData.messages?.[type]?.[selectedMessageLang]?.body || ''}
+                        onChange={(e) => updateMessage(type, 'body', e.target.value)}
+                        placeholder="Email body content..."
+                        rows={4}
+                      />
+                    </div>
                   </div>
-                  <div className="space-y-2">
-                    <Label>Body</Label>
-                    <Textarea
-                      value={formData.messages?.invite[selectedMessageLang]?.body || ''}
-                      onChange={(e) => updateMessage('invite', 'body', e.target.value)}
-                      placeholder="Email body content..."
-                      rows={4}
-                    />
-                  </div>
-                </div>
-
-                {/* Reminder */}
-                <div className="space-y-4">
-                  <h4 className="font-medium">Reminder Email</h4>
-                  <div className="space-y-2">
-                    <Label>Subject</Label>
-                    <Input
-                      value={formData.messages?.reminder[selectedMessageLang]?.subject || ''}
-                      onChange={(e) => updateMessage('reminder', 'subject', e.target.value)}
-                      placeholder="Email subject line..."
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label>Body</Label>
-                    <Textarea
-                      value={formData.messages?.reminder[selectedMessageLang]?.body || ''}
-                      onChange={(e) => updateMessage('reminder', 'body', e.target.value)}
-                      placeholder="Email body content..."
-                      rows={4}
-                    />
-                  </div>
-                </div>
-
-                {/* Closing */}
-                <div className="space-y-4">
-                  <h4 className="font-medium">Thank You Email</h4>
-                  <div className="space-y-2">
-                    <Label>Subject</Label>
-                    <Input
-                      value={formData.messages?.closing[selectedMessageLang]?.subject || ''}
-                      onChange={(e) => updateMessage('closing', 'subject', e.target.value)}
-                      placeholder="Email subject line..."
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label>Body</Label>
-                    <Textarea
-                      value={formData.messages?.closing[selectedMessageLang]?.body || ''}
-                      onChange={(e) => updateMessage('closing', 'body', e.target.value)}
-                      placeholder="Email body content..."
-                      rows={4}
-                    />
-                  </div>
-                </div>
+                ))}
 
                 {/* CC Emails */}
                 <div className="space-y-4">
@@ -576,18 +487,54 @@ export default function SurveyBuilder() {
             }}
           >
             {activeTab === tabs[tabs.length - 1].id ? (
-              <>
-                <Save className="h-4 w-4 mr-2" />
-                Save Survey
-              </>
+              <><Save className="h-4 w-4 mr-2" />Save Survey</>
             ) : (
-              <>
-                Next
-                <ArrowRight className="h-4 w-4 ml-2" />
-              </>
+              <>Next<ArrowRight className="h-4 w-4 ml-2" /></>
             )}
           </Button>
         </div>
+
+        {/* Publish Checklist Dialog (S07) */}
+        <Dialog open={publishDialogOpen} onOpenChange={setPublishDialogOpen}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Publication Checklist</DialogTitle>
+              <DialogDescription>
+                Review all requirements before publishing. Once published, the survey cannot be edited.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-3 py-4">
+              {publishChecks.map((check, i) => (
+                <div key={i} className="flex items-center gap-3">
+                  {check.ok ? (
+                    <CheckCircle2 className="h-5 w-5 text-success flex-shrink-0" />
+                  ) : (
+                    <AlertCircle className="h-5 w-5 text-destructive flex-shrink-0" />
+                  )}
+                  <span className={`text-sm ${check.ok ? 'text-foreground' : 'text-destructive font-medium'}`}>
+                    {check.label}
+                  </span>
+                </div>
+              ))}
+            </div>
+            <div className="text-xs text-muted-foreground bg-muted p-3 rounded-lg">
+              <p className="font-medium mb-1">Upon publishing:</p>
+              <ul className="list-disc list-inside space-y-1">
+                <li>1 Microsoft Forms will be created per active language</li>
+                <li>Question versions will be frozen (snapshot)</li>
+                <li>Invitations will be scheduled for StartDate</li>
+                <li>Reminders scheduled at T-{formData.reminderSchedule?.firstReminder} and T-{formData.reminderSchedule?.secondReminder}</li>
+              </ul>
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setPublishDialogOpen(false)}>Cancel</Button>
+              <Button onClick={handlePublish} disabled={!allChecksPass}>
+                <Send className="h-4 w-4 mr-2" />
+                Confirm & Publish
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </div>
     </AppLayout>
   );
