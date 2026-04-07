@@ -48,7 +48,7 @@ import { useState } from 'react';
 import { SurveyStatus } from '@/types/survey';
 
 export default function SurveyManagement() {
-  const { surveys, deleteSurvey, publishSurvey, closeSurvey, responses, calculateNPS } = useSurvey();
+  const { surveys, deleteSurvey, publishSurvey, closeSurvey, responses, calculateNPS, permissions } = useSurvey();
   const navigate = useNavigate();
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<SurveyStatus | 'all'>('all');
@@ -121,10 +121,12 @@ export default function SurveyManagement() {
               </SelectContent>
             </Select>
           </div>
-          <Button onClick={() => navigate('/surveys/create')}>
-            <Plus className="h-4 w-4 mr-2" />
-            Create Survey
-          </Button>
+          {permissions.canCreateSurvey && (
+            <Button onClick={() => navigate('/surveys/create')}>
+              <Plus className="h-4 w-4 mr-2" />
+              Create Survey
+            </Button>
+          )}
         </div>
 
         {/* Survey Cards */}
@@ -210,7 +212,7 @@ export default function SurveyManagement() {
                               <Eye className="h-4 w-4 mr-2" />
                               View Details
                             </DropdownMenuItem>
-                            {survey.status === 'draft' && (
+                            {survey.status === 'draft' && permissions.canEditSurvey && (
                               <>
                                 <DropdownMenuItem onClick={(e) => { e.stopPropagation(); navigate(`/surveys/${survey.id}/edit`); }}>
                                   <Edit className="h-4 w-4 mr-2" />
@@ -222,7 +224,7 @@ export default function SurveyManagement() {
                                 </DropdownMenuItem>
                               </>
                             )}
-                            {survey.status === 'active' && (
+                            {survey.status === 'active' && permissions.canCloseSurvey && (
                               <DropdownMenuItem onClick={(e) => { e.stopPropagation(); handleClose(survey.id); }}>
                                 <Archive className="h-4 w-4 mr-2" />
                                 Close Survey
