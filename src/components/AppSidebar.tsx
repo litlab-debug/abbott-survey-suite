@@ -34,21 +34,30 @@ import { Badge } from '@/components/ui/badge';
 import { useSurvey } from '@/context/SurveyContext';
 import { UserRole, ROLE_PERMISSIONS } from '@/types/survey';
 
-const mainNavItems = [
-  { title: 'Dashboard', url: '/', icon: LayoutDashboard, permission: 'canViewDashboard' as const },
-  { title: 'Surveys', url: '/surveys', icon: FileText, permission: 'canViewDashboard' as const },
-  { title: 'Create Survey', url: '/surveys/create', icon: PlusCircle, permission: 'canCreateSurvey' as const },
+type PermissionKey = keyof typeof ROLE_PERMISSIONS.super_admin;
+
+interface NavItem {
+  title: string;
+  url: string;
+  icon: typeof LayoutDashboard;
+  permission: PermissionKey;
+}
+
+const mainNavItems: NavItem[] = [
+  { title: 'Dashboard', url: '/', icon: LayoutDashboard, permission: 'canViewDashboard' },
+  { title: 'Surveys', url: '/surveys', icon: FileText, permission: 'canViewDashboard' },
+  { title: 'Create Survey', url: '/surveys/create', icon: PlusCircle, permission: 'canCreateSurvey' },
 ];
 
-const operationsItems = [
-  { title: 'Targets', url: '/targets', icon: Users, permission: 'canManageTargets' as const },
-  { title: 'Monitoring', url: '/monitoring', icon: BarChart3, permission: 'canViewMonitoring' as const },
-  { title: 'History', url: '/history', icon: History, permission: 'canViewHistory' as const },
+const operationsItems: NavItem[] = [
+  { title: 'Targets', url: '/targets', icon: Users, permission: 'canManageTargets' },
+  { title: 'Monitoring', url: '/monitoring', icon: BarChart3, permission: 'canViewMonitoring' },
+  { title: 'History', url: '/history', icon: History, permission: 'canViewHistory' },
 ];
 
-const settingsItems = [
-  { title: 'Question Bank', url: '/questions', icon: ClipboardList, permission: 'canManageQuestionBank' as const },
-  { title: 'Settings', url: '/settings', icon: Settings, permission: 'canViewDashboard' as const },
+const settingsItems: NavItem[] = [
+  { title: 'Question Bank', url: '/questions', icon: ClipboardList, permission: 'canManageQuestionBank' },
+  { title: 'Settings', url: '/settings', icon: Settings, permission: 'canViewDashboard' },
 ];
 
 const roleLabels: Record<UserRole, string> = {
